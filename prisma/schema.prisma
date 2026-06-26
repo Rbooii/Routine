@@ -1,0 +1,307 @@
+// ============================================
+// 🧴 Routine — Database Schema
+// ============================================
+// Scalable PostgreSQL schema for skincare routine management
+// Design principles:
+//   - CUIDs for globally unique, URL-safe IDs
+//   - Compound indexes on hot query paths
+//   - Normalized structure (3NF) for data integrity
+//   - Soft relations with cascading deletes
+//   - Separate audit/log tables for analytics
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Core: Users ──────────────────────────────
+
+model User {
+  id             String    @id @default(cuid())
+  name           String?
+  email          String    @unique
+  emailVerified  DateTime?
+  hashedPassword String
+  image          String?
+  timezone       String    @default("Asia/Jakarta")
+  skinType       SkinType?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  routines          Routine[]
+  products          Product[]
+  routineLogs       RoutineLog[]
+  notificationPref  NotificationPreference?
+  pushSubscriptions PushSubscription[]
+  reminderLogs      ReminderLog[]
+
+  @@index([email])
+  @@map("users")
+}
+
+enum SkinType {
+  NORMAL
+  DRY
+  OILY
+  COMBINATION
+  SENSITIVE
+}
+
+// ── Products ─────────────────────────────────
+
+model Product {
+  id          String          @id @default(cuid())
+  name        String
+  brand       String?
+  category    ProductCategory
+  description String?
+  ingredients String[] // Array of ingredient names (lowercase, trimmed)
+  imageUrl    String?
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  routineStepProducts RoutineStepProduct[]
+
+  @@index([userId])
+  @@index([userId, category])
+  @@map("products")
+}
+
+enum ProductCategory {
+  CLEANSER
+  TONER
+  SERUM
+  MOISTURIZER
+  SUNSCREEN
+  EXFOLIANT
+  MASK
+  EYE_CREAM
+  LIP_CARE
+  TREATMENT
+  SPOT_TREATMENT
+  PRESCRIPTION
+  OTHER
+}
+
+// ── Routines ─────────────────────────────────
+
+model Routine {
+  id            String    @id @default(cuid())
+  name          String // e.g., "Morning Routine", "Post-Laser Recovery"
+  description   String?
+  timeOfDay     TimeOfDay
+  scheduledTime String // HH:mm format, e.g., "07:00"
+  daysOfWeek    Int[] // 0=Sun, 1=Mon, ... 6=Sat
+  isActive      Boolean   @default(true)
+  startDate     DateTime? // Optional: routine starts on this date
+  endDate       DateTime? // Optional: routine ends on this date (post-procedure)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  steps       RoutineStep[]
+  routineLogs RoutineLog[]
+
+  @@index([userId])
+  @@index([userId, isActive])
+  @@index([userId, timeOfDay])
+  @@map("routines")
+}
+
+enum TimeOfDay {
+  MORNING
+  AFTERNOON
+  EVENING
+  NIGHT
+  CUSTOM
+}
+
+// ── Routine Steps ────────────────────────────
+
+model RoutineStep {
+  id              String  @id @default(cuid())
+  order           Int // Display order within routine
+  action          String // e.g., "Apply", "Mix and Apply", "Wait"
+  instructions    String? // Detailed instructions for the user
+  waitTimeSeconds Int     @default(60) // Wait time after this step
+  isMixingStep    Boolean @default(false) // True if multiple products are mixed
+
+  routineId String
+  routine   Routine @relation(fields: [routineId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  products RoutineStepProduct[]
+  stepLogs RoutineStepLog[]
+
+  @@index([routineId])
+  @@index([routineId, order])
+  @@map("routine_steps")
+}
+
+// ── Step ↔ Product (Many-to-Many) ────────────
+
+model RoutineStepProduct {
+  id       String  @id @default(cuid())
+  quantity String? // e.g., "2 drops", "pea-sized amount"
+
+  stepId String
+  step   RoutineStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([stepId, productId])
+  @@map("routine_step_products")
+}
+
+// ── Routine Logs (Daily Tracking) ────────────
+
+model RoutineLog {
+  id          String           @id @default(cuid())
+  date        DateTime         @db.Date // The date this log is for
+  status      RoutineLogStatus @default(PENDING)
+  startedAt   DateTime?
+  completedAt DateTime?
+  notes       String?
+
+  routineId String
+  routine   Routine @relation(fields: [routineId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  stepLogs RoutineStepLog[]
+
+  @@unique([routineId, date])
+  @@index([userId, date])
+  @@index([userId, date, status])
+  @@map("routine_logs")
+}
+
+enum RoutineLogStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  PARTIALLY_COMPLETED
+  SKIPPED
+}
+
+// ── Step Logs (Per-Step Tracking) ─────────────
+
+model RoutineStepLog {
+  id          String    @id @default(cuid())
+  isCompleted Boolean   @default(false)
+  skippedAt   DateTime?
+  completedAt DateTime?
+
+  routineLogId String
+  routineLog   RoutineLog @relation(fields: [routineLogId], references: [id], onDelete: Cascade)
+
+  stepId String
+  step   RoutineStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
+
+  @@unique([routineLogId, stepId])
+  @@map("routine_step_logs")
+}
+
+// ── Notifications ────────────────────────────
+
+model NotificationPreference {
+  id                    String  @id @default(cuid())
+  emailEnabled          Boolean @default(true)
+  pushEnabled           Boolean @default(false)
+  reminderMinutesBefore Int     @default(5) // Minutes before routine to remind
+
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("notification_preferences")
+}
+
+model PushSubscription {
+  id        String  @id @default(cuid())
+  endpoint  String  @unique
+  p256dh    String
+  auth      String
+  userAgent String?
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("push_subscriptions")
+}
+
+model ReminderLog {
+  id      String          @id @default(cuid())
+  channel ReminderChannel
+  status  ReminderStatus
+  error   String?
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  sentAt DateTime @default(now())
+
+  @@index([userId, sentAt])
+  @@index([sentAt])
+  @@map("reminder_logs")
+}
+
+enum ReminderChannel {
+  EMAIL
+  PUSH
+}
+
+enum ReminderStatus {
+  SENT
+  FAILED
+  BOUNCED
+}
+
+// ── Ingredient Conflicts (Seed Data) ─────────
+
+model IngredientConflict {
+  id          String           @id @default(cuid())
+  ingredientA String // Lowercase, e.g., "retinol"
+  ingredientB String // Lowercase, e.g., "aha"
+  severity    ConflictSeverity
+  description String // Why they conflict
+
+  @@unique([ingredientA, ingredientB])
+  @@map("ingredient_conflicts")
+}
+
+enum ConflictSeverity {
+  LOW // Minor irritation possible
+  MEDIUM // Reduced effectiveness
+  HIGH // Significant irritation likely
+  CRITICAL // Potential skin damage
+}
