@@ -15,6 +15,32 @@ A mobile-first app that helps users manage complex post-clinic skincare routines
 
 ---
 
+## Agent Working Log Convention
+
+Any AI coding agent (Claude Code or otherwise) working on this repo must **log its work to `works.md` at the project root before starting on a task** — not after. One line per task, appended to the end of the file, never edited or rewritten retroactively.
+
+**Format:**
+```
+- [YYYY-MM-DD HH:MM] Short description of the task about to be done
+```
+
+**Example:**
+```
+- [2026-06-27 14:32] Implemented ingredient conflict detection in routine step form
+- [2026-06-27 15:05] Added QStash signature verification to /api/cron/send-reminders
+- [2026-06-27 15:40] Fixed timezone bug in "next up" countdown on Today screen
+```
+
+Rules:
+1. **Log before, not after.** The entry should be written the moment the agent starts the task, so the log reflects what was attempted even if the task fails or is interrupted partway through.
+2. **One line per unit of work.** Don't batch multiple unrelated changes into a single entry.
+3. **Append-only.** Never delete or rewrite earlier lines — if a task is abandoned or reverted, add a new line saying so rather than erasing the original entry.
+4. **`works.md` is plain history, not a TODO list.** It records what was done (or attempted), not what's planned — that belongs in issues/the backlog instead.
+
+This gives a lightweight, file-based audit trail of every agent-driven change to the codebase, independent of git commit messages.
+
+---
+
 ## User Review Required
 
 > [!IMPORTANT]
@@ -372,6 +398,7 @@ Routines/
 ├── vercel.json
 ├── .env.example
 ├── .env.local
+├── works.md                            # Append-only agent work log (see "Agent Working Log Convention")
 └── package.json
 ```
 
