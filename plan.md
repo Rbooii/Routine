@@ -50,9 +50,9 @@ Users forget steps, apply products in the wrong order, or mix incompatible ingre
 | Database | PostgreSQL + Prisma ORM |
 | Auth | Auth.js v5 (Credentials provider, email/password) |
 | UI | shadcn/ui + Tailwind CSS |
-| Email | Resend (transactional emails) |
+| Email | Resend (transactional emails with custom domain support) |
 | Push | Web Push API + `web-push` library |
-| Scheduling | Vercel Cron Jobs |
+| Scheduling | External Cron Pinger (e.g., cron-job.org) targeting Next.js API / Vercel Cron (Daily fallback) |
 | Deployment | Vercel |
 
 ---
@@ -220,7 +220,7 @@ The database is designed with **scalability, normalization, and extensibility** 
   "crons": [
     {
       "path": "/api/cron/send-reminders",
-      "schedule": "*/5 * * * *"
+      "schedule": "0 0 * * *"
     }
   ]
 }
